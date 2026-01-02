@@ -16,72 +16,73 @@ class AuthController extends Controller
 {
 
     public function profile()
-{
-    $user = auth('api')->user(); // pega o usuário logado
+    {
+        $user = auth('api')->user(); // pega o usuário logado
 
-    return response()->json([
-        'user' => $user,
-        'roles' => $user->getRoleNames(),
-        'permissions' => $user->getAllPermissions()->pluck('name')
-    ]);
-}
-    // LOGIN
-    public function login(Request $request)
-{
-    $credentials = $request->validate([
-        'email' => 'required|email',
-        'password' => 'required'
-    ]);
-
-    if (! $token = Auth::guard('api')->attempt($credentials)) {
-        return response()->json(['message' => 'Invalid credentials'], 401);
+        return response()->json([
+            'user' => $user,
+            'roles' => $user->getRoleNames(),
+            'permissions' => $user->getAllPermissions()->pluck('name')
+        ]);
     }
 
-    // 2FA: gera token temporário e envia email
-    $user = auth('api')->user(); // ou User::where('email', ...)->first()
-    $twoFactorCode = rand(100000, 999999);
-    $expires = now()->addMinutes(10);
+    // LOGIN
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
 
-    DB::table('two_factor_tokens')->updateOrInsert(
-        ['user_id' => $user->id],
-        ['token' => $twoFactorCode, 'expires_at' => $expires, 'updated_at' => now()]
-    );
+        if (! $token = Auth::guard('api')->attempt($credentials)) {
+            return response()->json(['message' => 'Invalid credentials'], 401);
+        }
 
-    Mail::raw("Seu código 2FA: $twoFactorCode", function ($message) use ($user) {
-        $message->to($user->email)->subject('Código 2FA');
-    });
+        // 2FA: gera token temporário e envia email
+        $user = auth('api')->user(); // ou User::where('email', ...)->first()
+        $twoFactorCode = rand(100000, 999999);
+        $expires = now()->addMinutes(10);
 
-    return response()->json([
-        'message' => 'Código 2FA enviado por email',
-        'access_token' => $token // opcional: só referência
-    ]);
-}
+        DB::table('two_factor_tokens')->updateOrInsert(
+            ['user_id' => $user->id],
+            ['token' => $twoFactorCode, 'expires_at' => $expires, 'updated_at' => now()]
+        );
 
-public function verify2FA(Request $request)
-{
-    $request->validate([
-        'email' => 'required|email',
-        'token' => 'required|digits:6'
-    ]);
+        Mail::raw("Seu código 2FA: $twoFactorCode", function ($message) use ($user) {
+            $message->to($user->email)->subject('Código 2FA');
+        });
 
-    $user = \App\Models\User::where('email', $request->email)->first();
-    if (!$user) return response()->json(['message' => 'Usuário não encontrado'], 404);
+        return response()->json([
+            'message' => 'Código 2FA enviado por email',
+            'access_token' => $token // opcional: só referência
+        ]);
+    }
 
-    $record = DB::table('two_factor_tokens')
-        ->where('user_id', $user->id)
-        ->where('token', $request->token)
-        ->where('expires_at', '>', now())
-        ->first();
+    public function verify2FA(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'token' => 'required|digits:6'
+        ]);
 
-    if (!$record) return response()->json(['message' => 'Token inválido ou expirado'], 400);
+        $user = \App\Models\User::where('email', $request->email)->first();
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado'], 404);
 
-    return response()->json([
-        'message' => '2FA verificado com sucesso!',
-        'user' => $user,
-        'roles' => $user->getRoleNames(),
-        'permissions' => $user->getAllPermissions()->pluck('name')
-    ]);
-}
+        $record = DB::table('two_factor_tokens')
+            ->where('user_id', $user->id)
+            ->where('token', $request->token)
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if (!$record) return response()->json(['message' => 'Token inválido ou expirado'], 400);
+
+        return response()->json([
+            'message' => '2FA verificado com sucesso!',
+            'user' => $user,
+            'roles' => $user->getRoleNames(),
+            'permissions' => $user->getAllPermissions()->pluck('name')
+        ]);
+    }
 
     // REFRESH token
     public function refresh()
